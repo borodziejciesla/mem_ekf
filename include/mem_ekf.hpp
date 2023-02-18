@@ -17,7 +17,6 @@ namespace eot {
       using StateCovariance = Eigen::Matrix<double, state_size, state_size>;
       using MeasurementVector = Eigen::Vector<double, measurement_size>;
       using MeasurementCovariance = Eigen::Matrix<double, measurement_size, measurement_size>;
-      using MeasurementCovariance = Eigen::Matrix<double, measurement_size, measurement_size>;
 
     public:
       explicit MemEkf(const MemEkfCalibrations & calibrations)
@@ -33,7 +32,7 @@ namespace eot {
         f_tilde_(2u, 2u) = 1.0;
       }
       
-      virtual MemEkf(void) = default;
+      virtual ~MemEkf(void) = default;
 
       void Run(const double timestamp, const std::vector<MeasurementVector> & measurements) {
         // Set time delta
@@ -43,7 +42,7 @@ namespace eot {
         RunCorrectionStep(measurements);
       }
 
-      const ObjectState & GetEstimatedState(void) const {
+      const ObjectState<state_size> & GetEstimatedState(void) const {
         return state_;
       }
 
@@ -53,7 +52,7 @@ namespace eot {
     private:
       void RunUpdateStep(const double time_delta) {
         /* Update kinematic */
-        RunKinematicUpdate(time_delta);
+        UpdateKinematic(time_delta);
         /* Update extent state */
         UpdateExtent();
       }
@@ -135,7 +134,7 @@ namespace eot {
       Eigen::Matrix<double, 2u, 2u> c_h_ = Eigen::Matrix<double, 2u, 2u>::Zero();
 
       // Estimated state
-      ObjectState state_;
+      ObjectState<state_size> state_;
   };
 } //  namespace eot
 

@@ -13,16 +13,16 @@ namespace eot {
     EllipseCovariance covariance = EllipseCovariance::Zero();
   };
 
-  template <size_t size>
+  template <size_t state_size>
   struct KinematicStateWithCovariance {
-    Eigen::Vector<double, size> state;
-    Eigen::Matrix<double, state, state> covariance = Eigen::Matrix<double, state, state>::Zero();
+    Eigen::Vector<double, state_size> state;
+    Eigen::Matrix<double, state_size, state_size> covariance = Eigen::Matrix<double, state_size, state_size>::Zero();
   };
 
-  template <size_t size>
+  template <size_t state_size>
   struct ObjectState {
     EllipseWithCovariance extent_state;
-    KinematicStateWithCovariance<size> kinematic_state;
+    KinematicStateWithCovariance<state_size> kinematic_state;
   };
 } //  namespace eot
 

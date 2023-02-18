@@ -7,7 +7,7 @@ class ModelCv : public eot::MemEkf<4u, 2u> {
     void UpdateKinematic(const double time_delta) {
       //
     }
-}
+};
 
 /* Tests */
 class MemEkfTests : public ::testing::Test
