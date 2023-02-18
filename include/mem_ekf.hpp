@@ -6,6 +6,7 @@
 
 #include <Eigen/Dense>
 
+#include "measurement.hpp"
 #include "mem_ekf_calibrations.hpp"
 #include "object_state.hpp"
 #include "../components/helpers/helper_functions.hpp"
@@ -16,6 +17,7 @@ namespace eot {
     public:
       using StateVector = Eigen::Vector<double, state_size>;
       using StateMatrix = Eigen::Matrix<double, state_size, state_size>;
+      using Measurement = MeasurementWithCovariance<measurement_size>;
       using MeasurementVector = Eigen::Vector<double, measurement_size>;
       using MeasurementMatrix = Eigen::Matrix<double, measurement_size, measurement_size>;
 
@@ -41,7 +43,7 @@ namespace eot {
       
       virtual ~MemEkf(void) = default;
 
-      void Run(const double timestamp, const std::vector<MeasurementVector> & measurements) {
+      void Run(const double timestamp, const std::vector<Measurement> & measurements) {
         // Set time delta
         const auto time_delta = timestamp - prev_timestamp_;
         // Run algorithm
@@ -67,12 +69,12 @@ namespace eot {
         UpdateExtent();
       }
 
-      void RunCorrectionStep(const std::vector<MeasurementVector> & measurements) {
+      void RunCorrectionStep(const std::vector<Measurement> & measurements) {
         for (const auto & measurement : measurements)
           MakeOneDetectionCorrection(measurement);
       }
 
-      void MakeOneDetectionCorrection(const MeasurementVector & measurement) {
+      void MakeOneDetectionCorrection(const Measurement & measurement) {
         SetHelperVariables();
         const auto predicted_measurement = h_ * state_.kinematic_state.state;
 
@@ -81,12 +83,12 @@ namespace eot {
         MakeExtentCorrection(measurement, predicted_measurement, cy);
       }
 
-      Eigen::Matrix<double, 2u, 2u> MakeKinematicCorrection(const MeasurementVector & measurement, const Eigen::Vector<double, 2u> & predicted_measurement) {
+      Eigen::Matrix<double, 2u, 2u> MakeKinematicCorrection(const Measurement & measurement, const Eigen::Vector<double, 2u> & predicted_measurement) {
         // Calculate moments for the kinematic state update
         const auto cry = state_.kinematic_state.covariance * h_.transpose();
-        const auto cy = h_ * state_.kinematic_state.covariance * h_.transpose() + c_i_ + c_ii_; // + c_v_
+        const auto cy = h_ * state_.kinematic_state.covariance * h_.transpose() + c_i_ + c_ii_ + measurement.covariance;
         // Udpate kinematic estimate
-        state_.kinematic_state.state += cry * cy.inverse() * (measurement - predicted_measurement);
+        state_.kinematic_state.state += cry * cy.inverse() * (measurement.value - predicted_measurement);
         state_.kinematic_state.covariance -= cry * cy.inverse() * cry.transpose();
         // Force covariance symetry
         MakeMatrixSymetric<state_size>(state_.kinematic_state.covariance);
@@ -94,9 +96,9 @@ namespace eot {
         return cy;
       }
 
-      void MakeExtentCorrection(const MeasurementVector & measurement, const Eigen::Vector<double, 2u> & predicted_measurement, const Eigen::Matrix<double, 2u, 2u> & cy) {
+      void MakeExtentCorrection(const Measurement & measurement, const Eigen::Vector<double, 2u> & predicted_measurement, const Eigen::Matrix<double, 2u, 2u> & cy) {
         // Construct pseudo-measurement for the shape update
-        const auto yi = f_ * KroneckerProduct(measurement - predicted_measurement, measurement - predicted_measurement); 
+        const auto yi = f_ * KroneckerProduct(measurement.value - predicted_measurement, measurement.value - predicted_measurement); 
         // Calculate moments for the shape update
         const auto yi_bar = f_ * cy.reshaped(4u, 1u);
         const auto cp_y = state_.extent_state.covariance * m_.transpose();
