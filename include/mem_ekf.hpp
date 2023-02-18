@@ -8,15 +8,16 @@
 
 #include "mem_ekf_calibrations.hpp"
 #include "object_state.hpp"
+#include "../components/helpers/helper_functions.hpp"
 
 namespace eot {
   template <size_t state_size, size_t measurement_size>
   class MemEkf {
     public:
       using StateVector = Eigen::Vector<double, state_size>;
-      using StateCovariance = Eigen::Matrix<double, state_size, state_size>;
+      using StateMatrix = Eigen::Matrix<double, state_size, state_size>;
       using MeasurementVector = Eigen::Vector<double, measurement_size>;
-      using MeasurementCovariance = Eigen::Matrix<double, measurement_size, measurement_size>;
+      using MeasurementMatrix = Eigen::Matrix<double, measurement_size, measurement_size>;
 
     public:
       explicit MemEkf(const MemEkfCalibrations & calibrations)
@@ -30,6 +31,9 @@ namespace eot {
         f_tilde_(0u, 0u) = 1.0;
         f_tilde_(1u, 3u) = 1.0;
         f_tilde_(2u, 2u) = 1.0;
+        // h_ = [I(2x2), 0(2,state_size-2)]
+        h_(0u, 0u) = 1.0;
+        h_(1u, 1u) = 1.0;
       }
       
       virtual ~MemEkf(void) = default;
@@ -49,6 +53,9 @@ namespace eot {
     protected:
       virtual void UpdateKinematic(const double time_delta) = 0;
 
+      // Estimated state
+      ObjectState<state_size> state_;
+
     private:
       void RunUpdateStep(const double time_delta) {
         /* Update kinematic */
@@ -65,13 +72,29 @@ namespace eot {
       void MakeOneDetectionCorrection(const MeasurementVector & measurement) {
         SetHelperVariables();
 
-        // Calculate moments for the kinematic state update
-        // Udpate kinematic estimate
+        const auto pose = h_ * state_.kinematic_state.state;
 
+        // Calculate moments for the kinematic state update
+        const auto cry = state_.kinematic_state.covariance * h_.transpose();
+        const auto cy = h_ * state_.kinematic_state.covariance * h_.transpose() + c_i_ + c_ii_; // + c_v_
+        // Udpate kinematic estimate
+        state_.kinematic_state.state += cry * cy.inverse() * (measurement - pose);
+        state_.kinematic_state.covariance -= cry * cy.inverse() * cry.transpose();
+        // Force covariance symetry
+        MakeMatrixSymetric<state_size>(state_.kinematic_state.covariance);
 
         // Construct pseudo-measurement for the shape update
+        const auto yi = f_ * KroneckerProduct(measurement - pose, measurement - pose); 
         // Calculate moments for the shape update
+        const auto yi_bar = f_ * cy.reshaped(4u, 1u);
+        const auto cp_y = state_.extent_state.covariance * m_.transpose();
+        const auto c_y = f_ * KroneckerProduct(cy, cy) * (f_ + f_tilde_).transpose();
         // Update shape
+        const auto updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
+        state_.extent_state.ellipse = ConvertVectorToEllipse(updated_ellipse_vector);
+        state_.extent_state.covariance -= cp_y * c_y.inverse() * cp_y.transpose;
+        // Force covariance symetry
+        MakeMatrixSymetric<state_size>(state_.extent_state.covariance);
       }
 
       void SetHelperVariables(void) {
@@ -106,7 +129,14 @@ namespace eot {
         // Set c_i_
         c_i_ = s_ * c_h_ * s_.transpose();
         // Set c_ii_
-
+        c_ii_(0u, 0u) = (state_.extent_state.covariance * j1_ * c_h_ * j1_).trace();
+        c_ii_(0u, 1u) = (state_.extent_state.covariance * j2_ * c_h_ * j1_).trace();
+        c_ii_(1u, 0u) = (state_.extent_state.covariance * j1_ * c_h_ * j2_).trace();
+        c_ii_(1u, 1u) = (state_.extent_state.covariance * j2_ * c_h_ * j2_).trace();
+        // set m_
+        m_.row(0) = 2.0 * s1_ * c_h_ * j1_;
+        m_.row(1) = 2.0 * s2_ * c_h_ * j2_;
+        m_.row(2) = s1_ * c_h_ * j2_ + s2_ * c_h_ * j1_;
       }
 
       void UpdateExtent(void) {
@@ -120,21 +150,18 @@ namespace eot {
       Eigen::Matrix<double, 3u, 4u> f_ = Eigen::Matrix<double, 3u, 4u>::Zero();
       Eigen::Matrix<double, 3u, 4u> f_tilde_ = Eigen::Matrix<double, 3u, 4u>::Zero();
       Eigen::Matrix<double, 2u, 2u> s_ = Eigen::Matrix<double, 2u, 2u>::Zero();
-      Eigen::Matrix<double, 1u, 2u> s1_ = Eigen::Matrix<double, 2u, 2u>::Zero();
+      Eigen::Matrix<double, 1u, 2u> s1_ = Eigen::Matrix<double, 1u, 2u>::Zero();
       Eigen::Matrix<double, 1u, 2u> s2_ = Eigen::Matrix<double, 1u, 2u>::Zero();
-      Eigen::Matrix<double, 2u, 3u> j1_ = Eigen::Matrix<double, 3u, 4u>::Zero();
-      Eigen::Matrix<double, 2u, 3u> j2_ = Eigen::Matrix<double, 3u, 4u>::Zero();
+      Eigen::Matrix<double, 2u, 3u> j1_ = Eigen::Matrix<double, 2u, 3u>::Zero();
+      Eigen::Matrix<double, 2u, 3u> j2_ = Eigen::Matrix<double, 2u, 3u>::Zero();
       Eigen::Matrix<double, 2u, 2u> c_i_ = Eigen::Matrix<double, 2u, 2u>::Zero();
       Eigen::Matrix<double, 2u, 2u> c_ii_ = Eigen::Matrix<double, 2u, 2u>::Zero();
-      Eigen::Matrix<double, 3u, 3u> m_ = Eigen::Matrix<double, 2u, 2u>::Zero();
+      Eigen::Matrix<double, 3u, 3u> m_ = Eigen::Matrix<double, 3u, 3u>::Zero();
       Eigen::Matrix<double, 4u, 2u> c_mz_ = Eigen::Matrix<double, 4u, 2u>::Zero();
       Eigen::Matrix<double, 2u, 2u> c_z_ = Eigen::Matrix<double, 2u, 2u>::Zero();
       Eigen::Matrix<double, 2u, state_size> h_ = Eigen::Matrix<double, 2u, state_size>::Zero();
 
       Eigen::Matrix<double, 2u, 2u> c_h_ = Eigen::Matrix<double, 2u, 2u>::Zero();
-
-      // Estimated state
-      ObjectState<state_size> state_;
   };
 } //  namespace eot
 

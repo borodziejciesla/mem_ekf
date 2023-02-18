@@ -1,13 +1,8 @@
 #include "gtest/gtest.h"
 
-#include "mem_ekf.hpp"
+#include "model_cv.hpp"
 
-class ModelCv : public eot::MemEkf<4u, 2u> {
-  protected:
-    void UpdateKinematic(const double time_delta) {
-      //
-    }
-};
+#include "mem_ekf.hpp"
 
 /* Tests */
 class MemEkfTests : public ::testing::Test
@@ -18,5 +13,7 @@ class MemEkfTests : public ::testing::Test
 
 TEST_F(MemEkfTests, DummyTest)
 {
-    EXPECT_TRUE(true);
+  eot::MemEkfCalibrations calibrations;
+  eot::ModelCv model_cv(calibrations);
+  EXPECT_TRUE(true);
 }
