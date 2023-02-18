@@ -11,7 +11,7 @@
 #include "../components/helpers/helper_functions.hpp"
 
 namespace eot {
-  template <size_t state_size, size_t measurement_size>
+  template <size_t state_size, size_t measurement_size = 2u>
   class MemEkf {
     public:
       using StateVector = Eigen::Vector<double, state_size>;
@@ -20,8 +20,11 @@ namespace eot {
       using MeasurementMatrix = Eigen::Matrix<double, measurement_size, measurement_size>;
 
     public:
-      explicit MemEkf(const MemEkfCalibrations & calibrations)
-        : calibrations_{calibrations} {
+      explicit MemEkf(const MemEkfCalibrations<state_size> & calibrations)
+        : calibrations_{calibrations}
+        , c_kinematic_{ConvertDiagonalToMatrix(calibrations_.process_noise_kinematic_diagonal)}
+        , c_h_{ConvertDiagonalToMatrix(calibrations_.multiplicative_noise_diagonal)}
+        , c_extent_{ConvertDiagonalToMatrix(calibrations_.process_noise_extent_diagonal)} {
         /* Set constants */
         // f_ = [1 0 0 0; 0 0 0 1; 0 1 0 0]
         f_(0u, 0u) = 1.0;
@@ -52,9 +55,9 @@ namespace eot {
 
     protected:
       virtual void UpdateKinematic(const double time_delta) = 0;
-
-      // Estimated state
+      
       ObjectState<state_size> state_;
+      const Eigen::Matrix<double, state_size, state_size> c_kinematic_;
 
     private:
       void RunUpdateStep(const double time_delta) {
@@ -71,24 +74,33 @@ namespace eot {
 
       void MakeOneDetectionCorrection(const MeasurementVector & measurement) {
         SetHelperVariables();
+        const auto predicted_measurement = h_ * state_.kinematic_state.state;
 
-        const auto pose = h_ * state_.kinematic_state.state;
+        // Make corrections
+        const auto cy = MakeKinematicCorrection(measurement, predicted_measurement);
+        MakeExtentCorrection(measurement, predicted_measurement, cy);
+      }
 
+      Eigen::Matrix<double, 2u, 2u> MakeKinematicCorrection(const MeasurementVector & measurement, const Eigen::Vector<double, 2u> & predicted_measurement) {
         // Calculate moments for the kinematic state update
         const auto cry = state_.kinematic_state.covariance * h_.transpose();
         const auto cy = h_ * state_.kinematic_state.covariance * h_.transpose() + c_i_ + c_ii_; // + c_v_
         // Udpate kinematic estimate
-        state_.kinematic_state.state += cry * cy.inverse() * (measurement - pose);
+        state_.kinematic_state.state += cry * cy.inverse() * (measurement - predicted_measurement);
         state_.kinematic_state.covariance -= cry * cy.inverse() * cry.transpose();
         // Force covariance symetry
         MakeMatrixSymetric<state_size>(state_.kinematic_state.covariance);
 
+        return cy;
+      }
+
+      void MakeExtentCorrection(const MeasurementVector & measurement, const Eigen::Vector<double, 2u> & predicted_measurement, const Eigen::Matrix<double, 2u, 2u> & cy) {
         // Construct pseudo-measurement for the shape update
-        const auto yi = f_ * KroneckerProduct(measurement - pose, measurement - pose); 
+        const auto yi = f_ * KroneckerProduct(measurement - predicted_measurement, measurement - predicted_measurement); 
         // Calculate moments for the shape update
         const auto yi_bar = f_ * cy.reshaped(4u, 1u);
         const auto cp_y = state_.extent_state.covariance * m_.transpose();
-        const auto c_y = f_ * KroneckerProduct(cy, cy) * (f_ + f_tilde_).transpose();
+        const auto c_y = f_ * KroneckerProduct<2u, 2u, 2u, 2u, Eigen::Matrix<double, 2u, 2u>, Eigen::Matrix<double, 2u, 2u>>(cy, cy) * (f_ + f_tilde_).transpose();
         // Update shape
         const auto updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
         state_.extent_state.ellipse = ConvertVectorToEllipse(updated_ellipse_vector);
@@ -140,10 +152,11 @@ namespace eot {
       }
 
       void UpdateExtent(void) {
-        //
+        // elleipse = ellipse
+        state_.extent_state.covariance += c_extent_;
       }
 
-      MemEkfCalibrations calibrations_;
+      MemEkfCalibrations<state_size> calibrations_;
 
       double prev_timestamp_ = 0.0;
 
@@ -161,7 +174,8 @@ namespace eot {
       Eigen::Matrix<double, 2u, 2u> c_z_ = Eigen::Matrix<double, 2u, 2u>::Zero();
       Eigen::Matrix<double, 2u, state_size> h_ = Eigen::Matrix<double, 2u, state_size>::Zero();
 
-      Eigen::Matrix<double, 2u, 2u> c_h_ = Eigen::Matrix<double, 2u, 2u>::Zero();
+      const Eigen::Matrix<double, 2u, 2u> c_h_;
+      const Eigen::Matrix<double, 3u, 3u> c_extent_;
   };
 } //  namespace eot
 

@@ -14,8 +14,8 @@ namespace eot {
   }
 
   /* Kronecker tensor product */
-  template <size_t a_rows, size_t a_cols, size_t b_rows, size_t b_cols>
-  const Eigen::Matrix<double, a_rows * b_rows, a_cols * b_cols> & KroneckerProduct(const Eigen::Matrix<double, a_rows, a_cols> & a, const Eigen::Matrix<double, b_rows, b_cols> & b) {
+  template <size_t a_rows, size_t a_cols, size_t b_rows, size_t b_cols, typename matrix_a, typename matrix_b>
+  const Eigen::Matrix<double, a_rows * b_rows, a_cols * b_cols> & KroneckerProduct(const matrix_a & a, const matrix_b & b) {
     static Eigen::Matrix<double, a_rows * b_rows, a_cols * b_cols> output;
 
     for (size_t row = 0u; row < a_rows; row++) {
@@ -49,6 +49,17 @@ namespace eot {
     ellipse.l2 = vector(2u);
 
     return ellipse;
+  }
+
+  /* Diagonal to matrix */
+  template <size_t size>
+  Eigen::Matrix<double, size, size> ConvertDiagonalToMatrix(const std::array<double, size> & diagonal) {
+    static Eigen::Matrix<double, size, size> output = Eigen::Matrix<double, size, size>::Zero();
+
+    for (size_t index = 0u; index < size; index++)
+      output(index, index) = diagonal.at(index);
+
+    return output;
   }
 } //  namespace eot
 

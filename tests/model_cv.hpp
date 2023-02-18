@@ -6,7 +6,7 @@
 namespace eot {
   class ModelCv : public MemEkf<4u, 2u> {
     public:
-      explicit ModelCv(const MemEkfCalibrations & calibrations) 
+      explicit ModelCv(const MemEkfCalibrations<4u> & calibrations) 
         : MemEkf<4u, 2u>(calibrations) {
         // TODO
       }
@@ -18,7 +18,7 @@ namespace eot {
 
         // Update kinematic
         state_.kinematic_state.state = transition_matrix_ * state_.kinematic_state.state;
-        state_.kinematic_state.covariance = transition_matrix_ * state_.kinematic_state.covariance * transition_matrix_.transpose(); // + cov
+        state_.kinematic_state.covariance = transition_matrix_ * state_.kinematic_state.covariance * transition_matrix_.transpose() + c_kinematic_;
       }
     
     private:

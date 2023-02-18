@@ -13,7 +13,7 @@ class MemEkfTests : public ::testing::Test
 
 TEST_F(MemEkfTests, DummyTest)
 {
-  eot::MemEkfCalibrations calibrations;
+  eot::MemEkfCalibrations<4u> calibrations;
   eot::ModelCv model_cv(calibrations);
   EXPECT_TRUE(true);
 }
