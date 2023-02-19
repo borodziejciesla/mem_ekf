@@ -5,6 +5,7 @@ project("mem_ekf" VERSION 0.0.1
   HOMEPAGE_URL "https://github.com/borodziejciesla/mem_ekf")
 
 set(TEST_PROJECT_NAME ${PROJECT_NAME}_tests)
+set(EXAMPLE_PROJECT_NAME ${PROJECT_NAME}_example)
 
 include(GNUInstallDirs)
 
@@ -14,8 +15,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(BUILD_TESTS "Build tests" ON)
+option(BUILD_EXAMPLE "Build example" ON)
 
-
+###############################################
+################## Library ####################
+###############################################
 find_package(Eigen3)
 
 add_subdirectory(components)
@@ -25,8 +29,6 @@ target_include_directories(${PROJECT_NAME}
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<TARGET_PROPERTY:eigen,INTERFACE_INCLUDE_DIRECTORIES>
 )
-
-# target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_20)
 
 # locations are provided by GNUInstallDirs
 # install(
@@ -64,6 +66,15 @@ install(FILES "${PROJECT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include DESTINATION include)
 
 set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
+
+###############################################
+################# Examples ####################
+###############################################
+if(BUILD_EXAMPLE)
+    project(${EXAMPLE_PROJECT_NAME})
+    
+    add_subdirectory(example)
+endif() # BUILD_EXAMPLE
 
 ###############################################
 ################ Unit Tests ###################
