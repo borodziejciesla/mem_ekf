@@ -18,6 +18,21 @@ namespace plt = matplotlibcpp;
 constexpr auto state_size = 4u;
 constexpr auto measurement_size = 2u;
 
+/*************************** Plot helpers ***************************/
+std::pair<std::vector<double>, std::vector<double>> CreateEllipse(const eot::Ellipse & ellipse, const std::pair<double, double> & center) {
+  std::vector<double> x;
+  std::vector<double> y;
+
+  for (double t = 0.0; t < 2.0 * std::numbers::pi_v<double>; t += 0.01) {
+      double x_t = ellipse.l1 * std::cos(t) * std::cos(ellipse.alpha) - ellipse.l2 * std::sin(t) * std::sin(ellipse.alpha) + center.first;
+      double y_t = ellipse.l1 * std::cos(t) * std::sin(ellipse.alpha) + ellipse.l2 * std::sin(t) * std::cos(ellipse.alpha) + center.second;
+      x.push_back(x_t);
+      y.push_back(y_t);
+  }
+
+  return std::make_pair(x, y);
+}
+
 /*************************** Define motion model ***************************/
 namespace eot {
   /* x, y, vx, vy */
@@ -44,10 +59,10 @@ namespace eot {
         transition_matrix_(0u, 0u) = 1.0;
         transition_matrix_(0u, 2u) = time_delta;
         // y
-        transition_matrix_(1u, 2u) = 1.0;
+        transition_matrix_(1u, 1u) = 1.0;
         transition_matrix_(1u, 3u) = time_delta;
         // vx
-        transition_matrix_(2u, 1u) = 1.0;
+        transition_matrix_(2u, 2u) = 1.0;
         // vy
         transition_matrix_(3u, 3u) = 1.0;
       }
@@ -74,7 +89,7 @@ int main() {
   calibrations.initial_state.kinematic_state.state << 100.0, 100.0, 10.0, -17.0;
   std::array<double, 4u> kin_cov = {900.0, 900.0, 16.0, 16.0};
   calibrations.initial_state.kinematic_state.covariance = eot::ConvertDiagonalToMatrix(kin_cov);
-  calibrations.initial_state.extent_state.ellipse.alpha = std::numbers::pi_v<double> / 3.0;
+  calibrations.initial_state.extent_state.ellipse.alpha = -std::numbers::pi_v<double> / 3.0;
   calibrations.initial_state.extent_state.ellipse.l1 = 200.0;
   calibrations.initial_state.extent_state.ellipse.l2 = 90.0;
   std::array<double, 3u> ext_cov = {0.2, 400.0, 400.0};
@@ -103,10 +118,10 @@ int main() {
 
       measurement.value(0u) = gt.center.at(index).at(0u)
         + h.at(0) * gt.size.at(index).first * std::cos(gt.orientation.at(index))
-        + h.at(1) * gt.size.at(index).second * std::cos(gt.orientation.at(index)); // + NOISE
+        - h.at(1) * gt.size.at(index).second * std::sin(gt.orientation.at(index)); // + NOISE
       measurement.value(1u) = gt.center.at(index).at(1u)
         + h.at(0) * gt.size.at(index).first * std::sin(gt.orientation.at(index))
-        + h.at(1) * gt.size.at(index).second * std::sin(gt.orientation.at(index)); // + NOISE
+        + h.at(1) * gt.size.at(index).second * std::cos(gt.orientation.at(index)); // + NOISE
 
       measurement.covariance = Eigen::Matrix<double, measurement_size, measurement_size>::Zero();
       measurement.covariance(0u, 0u) = 200.0;
@@ -118,6 +133,10 @@ int main() {
     // Run algo
     mem_ekf_cv_tracker.Run(static_cast<double>(index) * 10.0, measurements);
     output_objects.push_back(mem_ekf_cv_tracker.GetEstimatedState());
+
+
+    const auto object = mem_ekf_cv_tracker.GetEstimatedState();
+    std::cout << "alpha = " << object.extent_state.ellipse.alpha << ", l1 = " << object.extent_state.ellipse.l1 << ", l2 = " << object.extent_state.ellipse.l2 << "\n";
   }
 
   /************************** Plot outputs **************************/
@@ -142,8 +161,8 @@ int main() {
   // Detections
   std::vector<double> x_detections;
   std::vector<double> y_detections;
-  for (const auto & measurements : detections) {
-    for (const auto & detection : measurements) {
+  for (auto index = 0u; index < detections.size(); index = index + 3u) {
+    for (const auto & detection : detections.at(index)) {
       x_detections.push_back(detection.value(0u));
       y_detections.push_back(detection.value(1u));
     }
@@ -154,12 +173,29 @@ int main() {
   // Objects Center
   std::vector<double> x_objects;
   std::vector<double> y_objects;
-  for (const auto & object : output_objects) {
-    x_objects.push_back(object.kinematic_state.state(0u));
-    y_objects.push_back(object.kinematic_state.state(1u));
+  for (auto index = 0u; index < output_objects.size(); index = index + 3u) {
+    x_objects.push_back(output_objects.at(index).kinematic_state.state(0u));
+    y_objects.push_back(output_objects.at(index).kinematic_state.state(1u));
+
+    const auto [x_ellips, y_ellipse] = CreateEllipse(output_objects.at(index).extent_state.ellipse, std::make_pair(output_objects.at(index).kinematic_state.state(0u), output_objects.at(index).kinematic_state.state(1u)));
+    plt::plot(x_ellips, y_ellipse, "r");
   }
 
   plt::plot(x_objects, y_objects, "r*");
+
+  // Reference
+  std::vector<double> x_ref;
+  std::vector<double> y_ref;
+  for (auto index = 0u; index < gt.time_steps; index = index + 3u) {
+    x_ref.push_back(gt.center.at(index).at(0u));
+    y_ref.push_back(gt.center.at(index).at(1u));
+
+    eot::Ellipse ellipse = {gt.orientation.at(index), gt.size.at(index).first, gt.size.at(index).second};
+    const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(gt.center.at(index).at(0u), gt.center.at(index).at(1u)));
+    plt::plot(x_ellips, y_ellipse, "k");
+  }
+
+  plt::plot(x_objects, y_objects, "k*");
 
   plt::show();
 
