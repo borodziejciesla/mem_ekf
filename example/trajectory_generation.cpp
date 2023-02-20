@@ -60,6 +60,7 @@ GroundTruth GetGroundTruth(void) {
 
   // Set output
   GroundTruth gt;
+  gt.time_steps = time_steps;
   gt.orientation = gt_orient;
   gt.velocity = gt_vel;
   gt.size = gt_length;

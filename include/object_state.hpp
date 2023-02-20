@@ -15,7 +15,7 @@ namespace eot {
 
   template <size_t state_size>
   struct KinematicStateWithCovariance {
-    Eigen::Vector<double, state_size> state;
+    Eigen::Vector<double, state_size> state = Eigen::Vector<double, state_size>::Zero();
     Eigen::Matrix<double, state_size, state_size> covariance = Eigen::Matrix<double, state_size, state_size>::Zero();
   };
 

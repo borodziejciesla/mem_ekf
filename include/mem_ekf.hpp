@@ -24,6 +24,7 @@ namespace eot {
     public:
       explicit MemEkf(const MemEkfCalibrations<state_size> & calibrations)
         : calibrations_{calibrations}
+        , state_{calibrations_.initial_state}
         , c_kinematic_{ConvertDiagonalToMatrix(calibrations_.process_noise_kinematic_diagonal)}
         , c_h_{ConvertDiagonalToMatrix(calibrations_.multiplicative_noise_diagonal)}
         , c_extent_{ConvertDiagonalToMatrix(calibrations_.process_noise_extent_diagonal)} {
@@ -102,13 +103,13 @@ namespace eot {
         // Calculate moments for the shape update
         const auto yi_bar = f_ * cy.reshaped(4u, 1u);
         const auto cp_y = state_.extent_state.covariance * m_.transpose();
-        const auto c_y = f_ * KroneckerProduct<2u, 2u, 2u, 2u, Eigen::Matrix<double, 2u, 2u>, Eigen::Matrix<double, 2u, 2u>>(cy, cy) * (f_ + f_tilde_).transpose();
+        const auto c_y = f_ * KroneckerProduct(cy, cy) * (f_ + f_tilde_).transpose());
         // Update shape
         const auto updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
         state_.extent_state.ellipse = ConvertVectorToEllipse(updated_ellipse_vector);
         state_.extent_state.covariance -= cp_y * c_y.inverse() * cp_y.transpose;
         // Force covariance symetry
-        MakeMatrixSymetric<state_size>(state_.extent_state.covariance);
+        MakeMatrixSymetric<3u>(state_.extent_state.covariance);
       }
 
       void SetHelperVariables(void) {
