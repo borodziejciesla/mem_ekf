@@ -5,15 +5,18 @@
 #include <random>
 #include <string>
 
+#include "matplotlibcpp.hpp"
+
 #include "measurement.hpp"
 #include "mem_ekf.hpp"
 #include "../components/helpers/helper_functions.hpp"
 
 #include "trajectory_generation.hpp"
 
+namespace plt = matplotlibcpp;
+
 constexpr auto state_size = 4u;
 constexpr auto measurement_size = 2u;
-
 
 /*************************** Define motion model ***************************/
 namespace eot {
@@ -63,7 +66,7 @@ int main() {
   std::mt19937 gen(rd());
   std::uniform_real_distribution<> rand(0.0, 1.0);
 
-  /* Define tracker object */
+  /************************** Define tracker object **************************/
   eot::MemEkfCalibrations<state_size> calibrations;
   calibrations.multiplicative_noise_diagonal = {0.25, 0.25};
   calibrations.process_noise_kinematic_diagonal = {100.0, 100.0, 1.0, 1.0};
@@ -79,7 +82,10 @@ int main() {
 
   eot::ModelCv mem_ekf_cv_tracker(calibrations);
 
-  /* Run */
+  /************************** Run **************************/
+  std::vector<eot::ObjectState<state_size>> output_objects;
+  std::vector<std::vector<eot::MeasurementWithCovariance<measurement_size>>> detections;
+
   for (auto index = 0u; index < gt.time_steps; index++) {
     // Select detctions number in step
     auto detections_number = distribution(generator);
@@ -107,9 +113,55 @@ int main() {
       measurement.covariance(1u, 1u) = 8.0;
     }
 
+    detections.push_back(measurements);
+
     // Run algo
     mem_ekf_cv_tracker.Run(static_cast<double>(index) * 10.0, measurements);
+    output_objects.push_back(mem_ekf_cv_tracker.GetEstimatedState());
   }
+
+  /************************** Plot outputs **************************/
+  plt::figure_size(1200, 780);
+
+  plt::xlabel("X [m]");
+  plt::ylabel("Y [m]");
+
+  // Trajectory
+  std::vector<double> x_traj;
+  std::vector<double> y_traj;
+  for (const auto & point : gt.center) {
+    x_traj.push_back(point.at(0u));
+    y_traj.push_back(point.at(1u));
+  }
+
+  std::map<std::string, std::string> keywords_traj;
+  keywords_traj.insert(std::pair<std::string, std::string>("label", "Trajectory") );
+
+  plt::plot(x_traj, y_traj, keywords_traj);
+
+  // Detections
+  std::vector<double> x_detections;
+  std::vector<double> y_detections;
+  for (const auto & measurements : detections) {
+    for (const auto & detection : measurements) {
+      x_detections.push_back(detection.value(0u));
+      y_detections.push_back(detection.value(1u));
+    }
+  }
+
+  plt::scatter(x_detections, y_detections);
+
+  // Objects Center
+  std::vector<double> x_objects;
+  std::vector<double> y_objects;
+  for (const auto & object : output_objects) {
+    x_objects.push_back(object.kinematic_state.state(0u));
+    y_objects.push_back(object.kinematic_state.state(1u));
+  }
+
+  plt::plot(x_objects, y_objects, "r*");
+
+  plt::show();
 
   return EXIT_SUCCESS;
 }

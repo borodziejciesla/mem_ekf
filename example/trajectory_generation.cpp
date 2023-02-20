@@ -9,12 +9,12 @@
 GroundTruth GetGroundTruth(void) {
   // Generate orientation
   std::vector<double> gt_orient(103);
-  std::fill(gt_orient.begin(), gt_orient.begin() + 20u, -std::numbers::pi_v<double>); // 1
-  std::generate(gt_orient.begin() + 20u, gt_orient.begin() + 31u, [n = 0]() mutable { return (-std::numbers::pi_v<double> + static_cast<double>(n++) * std::numbers::pi_v<double> / 40.0); });    // 1
+  std::fill(gt_orient.begin(), gt_orient.begin() + 20u, -std::numbers::pi_v<double>/4); // 1
+  std::generate(gt_orient.begin() + 20u, gt_orient.begin() + 31u, [n = 0]() mutable { return (-std::numbers::pi_v<double>/4 + (static_cast<double>(n++) * std::numbers::pi_v<double> / 40.0)); });    // 1
   std::fill(gt_orient.begin() + 31u, gt_orient.begin() + 41u, 0.0);   // 3
   std::generate(gt_orient.begin() + 41u, gt_orient.begin() + 52u, [n = 0]() mutable { return (static_cast<double>(n++) * std::numbers::pi_v<double> / 20.0); });  // 4
   std::fill(gt_orient.begin() + 52u, gt_orient.begin() + 72u, std::numbers::pi_v<double> / 2.0);   // 5
-  std::generate(gt_orient.begin() + 72u, gt_orient.begin() + 83u, [n = 0]() mutable { return (std::numbers::pi_v<double> / 2.0 + static_cast<double>(n++) * std::numbers::pi_v<double> / 40.0); });    // 6
+  std::generate(gt_orient.begin() + 72u, gt_orient.begin() + 83u, [n = 0]() mutable { return (std::numbers::pi_v<double> / 2.0 + static_cast<double>(n++) * std::numbers::pi_v<double> / 20.0); });    // 6
   std::fill(gt_orient.begin() + 83u, gt_orient.end(), std::numbers::pi_v<double>);   // 7
 
   // Generate vel
@@ -47,16 +47,10 @@ GroundTruth GetGroundTruth(void) {
   std::vector<std::array<double, 2u>> gt_center(time_steps);
   gt_center.at(0) = {0.0, 0.0};
 
-  std::generate(gt_center.begin() + 1u, gt_center.end(),
-    [n = 00, time_interval, gt_center, &gt_vel](void) {
-      std::array<double, 2u> output;
-
-      output.at(0) = gt_center.at(n).at(0) + gt_vel.at(n+1u).first * time_interval;
-      output.at(0) = gt_center.at(n).at(1) + gt_vel.at(n+1u).second * time_interval;
-
-      return output;
-    }
-  );
+  for (auto index = 1u; index < time_steps; index++) {
+    gt_center.at(index).at(0u) = gt_center.at(index - 1u).at(0) + gt_vel.at(index).first * time_interval;
+    gt_center.at(index).at(1u) = gt_center.at(index - 1u).at(1) + gt_vel.at(index).second * time_interval;
+  }
 
   // Set output
   GroundTruth gt;

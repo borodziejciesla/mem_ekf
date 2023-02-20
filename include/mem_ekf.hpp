@@ -24,7 +24,7 @@ namespace eot {
     public:
       explicit MemEkf(const MemEkfCalibrations<state_size> & calibrations)
         : calibrations_{calibrations}
-        , state_{calibrations_.initial_state}
+        // , state_{calibrations_.initial_state}
         , c_kinematic_{ConvertDiagonalToMatrix(calibrations_.process_noise_kinematic_diagonal)}
         , c_h_{ConvertDiagonalToMatrix(calibrations_.multiplicative_noise_diagonal)}
         , c_extent_{ConvertDiagonalToMatrix(calibrations_.process_noise_extent_diagonal)} {
@@ -40,6 +40,8 @@ namespace eot {
         // h_ = [I(2x2), 0(2,state_size-2)]
         h_(0u, 0u) = 1.0;
         h_(1u, 1u) = 1.0;
+
+        state_ = calibrations_.initial_state;
       }
       
       virtual ~MemEkf(void) = default;
@@ -47,6 +49,7 @@ namespace eot {
       void Run(const double timestamp, const std::vector<Measurement> & measurements) {
         // Set time delta
         const auto time_delta = timestamp - prev_timestamp_;
+        prev_timestamp_ = timestamp;
         // Run algorithm
         RunUpdateStep(time_delta);
         RunCorrectionStep(measurements);
