@@ -6,7 +6,7 @@
 #include "ellipse.hpp"
 
 namespace eot {
-  using EllipseCovariance = Eigen::Matrix<double, 3u, 3u>;
+  using EllipseCovariance = Eigen::Matrix3d;
 
   struct EllipseWithCovariance {
     Ellipse ellipse;

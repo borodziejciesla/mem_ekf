@@ -92,24 +92,30 @@ namespace eot {
         state_.kinematic_state.state += cry * cy.inverse() * (measurement.value - predicted_measurement);
         state_.kinematic_state.covariance -= cry * cy.inverse() * cry.transpose();
         // Force covariance symetry
-        MakeMatrixSymetric<state_size>(state_.kinematic_state.covariance);
+        state_.kinematic_state.covariance = MakeMatrixSymetric<state_size>(state_.kinematic_state.covariance);
 
         return cy;
       }
 
       void MakeExtentCorrection(const Measurement & measurement, const Eigen::Vector<double, 2u> & predicted_measurement, const Eigen::Matrix<double, 2u, 2u> & cy) {
         // Construct pseudo-measurement for the shape update
-        const auto yi = f_ * KroneckerProduct(measurement.value - predicted_measurement, measurement.value - predicted_measurement); 
+        const Eigen::Vector2d innovation = measurement.value - predicted_measurement;
+        Eigen::Vector4d innovation_prod;
+        innovation_prod(0u) = std::pow(innovation(0u), 2);
+        innovation_prod(1u) = innovation(0u) * innovation(1u);
+        innovation_prod(2u) = innovation(0u) * innovation(1u);
+        innovation_prod(3u) = std::pow(innovation(1u), 2);
+        const Eigen::Vector3d yi = f_ * innovation_prod; 
         // Calculate moments for the shape update
-        const auto yi_bar = f_ * cy.reshaped(4u, 1u);
-        const auto cp_y = state_.extent_state.covariance * m_.transpose();
-        const auto c_y = f_ * KroneckerProduct(cy, cy) * (f_ + f_tilde_).transpose());
+        const Eigen::Vector3d yi_bar = f_ * cy.reshaped(4u, 1u);
+        const Eigen::Matrix3d cp_y = state_.extent_state.covariance * m_.transpose();
+        const Eigen::Matrix3d c_y = f_ * KroneckerProduct<2u, 2u, 2u, 2u>(cy, cy) * (f_ + f_tilde_).transpose();
         // Update shape
-        const auto updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
+        const Eigen::Vector3d updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
         state_.extent_state.ellipse = ConvertVectorToEllipse(updated_ellipse_vector);
-        state_.extent_state.covariance -= cp_y * c_y.inverse() * cp_y.transpose;
+        state_.extent_state.covariance -= static_cast<Eigen::Matrix3d>(cp_y * c_y.inverse()) * cp_y.transpose();
         // Force covariance symetry
-        MakeMatrixSymetric<3u>(state_.extent_state.covariance);
+        state_.extent_state.covariance = MakeMatrixSymetric<3u>(state_.extent_state.covariance);
       }
 
       void SetHelperVariables(void) {
@@ -144,10 +150,10 @@ namespace eot {
         // Set c_i_
         c_i_ = s_ * c_h_ * s_.transpose();
         // Set c_ii_
-        c_ii_(0u, 0u) = (state_.extent_state.covariance * j1_ * c_h_ * j1_).trace();
-        c_ii_(0u, 1u) = (state_.extent_state.covariance * j2_ * c_h_ * j1_).trace();
-        c_ii_(1u, 0u) = (state_.extent_state.covariance * j1_ * c_h_ * j2_).trace();
-        c_ii_(1u, 1u) = (state_.extent_state.covariance * j2_ * c_h_ * j2_).trace();
+        c_ii_(0u, 0u) = (state_.extent_state.covariance * j1_.transpose() * c_h_ * j1_).trace();
+        c_ii_(0u, 1u) = (state_.extent_state.covariance * j2_.transpose() * c_h_ * j1_).trace();
+        c_ii_(1u, 0u) = (state_.extent_state.covariance * j1_.transpose() * c_h_ * j2_).trace();
+        c_ii_(1u, 1u) = (state_.extent_state.covariance * j2_.transpose() * c_h_ * j2_).trace();
         // set m_
         m_.row(0) = 2.0 * s1_ * c_h_ * j1_;
         m_.row(1) = 2.0 * s2_ * c_h_ * j2_;
@@ -178,7 +184,7 @@ namespace eot {
       Eigen::Matrix<double, 2u, state_size> h_ = Eigen::Matrix<double, 2u, state_size>::Zero();
 
       const Eigen::Matrix<double, 2u, 2u> c_h_;
-      const Eigen::Matrix<double, 3u, 3u> c_extent_;
+      const Eigen::Matrix3d c_extent_;
   };
 } //  namespace eot
 

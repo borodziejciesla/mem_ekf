@@ -27,7 +27,7 @@ GroundTruth GetGroundTruth(void) {
   );
 
   // Generate size
-  std::vector<std::pair<double, double>> gt_length;
+  std::vector<std::pair<double, double>> gt_length(103);
   std::fill(gt_length.begin(), gt_length.end(), std::make_pair<double, double>(170.0, 40.0));
 
   const auto time_steps = gt_orient.size();
