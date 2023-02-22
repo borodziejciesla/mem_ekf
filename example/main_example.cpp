@@ -50,7 +50,7 @@ namespace eot {
 
         // Update kinematic
         state_.kinematic_state.state = transition_matrix_ * state_.kinematic_state.state;
-        state_.kinematic_state.covariance = transition_matrix_ * state_.kinematic_state.covariance * transition_matrix_.transpose() + time_delta * c_kinematic_;
+        state_.kinematic_state.covariance = transition_matrix_ * state_.kinematic_state.covariance * transition_matrix_.transpose() + c_kinematic_;
       }
     
     private:
@@ -137,6 +137,7 @@ int main() {
 
     const auto object = mem_ekf_cv_tracker.GetEstimatedState();
     std::cout << "alpha = " << object.extent_state.ellipse.alpha << ", l1 = " << object.extent_state.ellipse.l1 << ", l2 = " << object.extent_state.ellipse.l2 << "\n";
+    std::cout << "Center Error [m]: " << std::hypot(object.kinematic_state.state(0) - gt.center.at(index).at(0), object.kinematic_state.state(1) - gt.center.at(index).at(1)) << "\n";
   }
 
   /************************** Plot outputs **************************/
@@ -195,7 +196,30 @@ int main() {
     plt::plot(x_ellips, y_ellipse, "k");
   }
 
-  plt::plot(x_objects, y_objects, "k*");
+  plt::plot(x_ref, y_ref, "k*");
+
+  plt::show();
+
+  // Velocity
+  std::vector<double> vx_ref;
+  std::vector<double> vy_ref;
+  std::vector<double> vx_obj;
+  std::vector<double> vy_obj;
+  std::vector<double> idx;
+  for (auto index = 0u; index < gt.time_steps; index = index + 1u) {
+    vx_ref.push_back(gt.velocity.at(index).first);
+    vy_ref.push_back(gt.velocity.at(index).second);
+
+    vx_obj.push_back(output_objects.at(index).kinematic_state.state(2u));
+    vy_obj.push_back(output_objects.at(index).kinematic_state.state(3u));
+
+    idx.push_back(index);
+  }
+
+  plt::plot(idx, vx_ref, "b");
+  plt::plot(idx, vy_ref, "b:");
+  plt::plot(idx, vx_obj, "r");
+  plt::plot(idx, vy_obj, "r:");
 
   plt::show();
 

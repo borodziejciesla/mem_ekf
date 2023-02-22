@@ -51,8 +51,11 @@ namespace eot {
         const auto time_delta = timestamp - prev_timestamp_;
         prev_timestamp_ = timestamp;
         // Run algorithm
-        RunUpdateStep(time_delta);
+        if (is_initialized_)
+          RunUpdateStep(time_delta);
         RunCorrectionStep(measurements);
+        
+        is_initialized_ = true;
       }
 
       const ObjectState<state_size> & GetEstimatedState(void) const {
@@ -80,19 +83,20 @@ namespace eot {
 
       void MakeOneDetectionCorrection(const Measurement & measurement) {
         SetHelperVariables();
-        const auto predicted_measurement = h_ * state_.kinematic_state.state;
+        predicted_measurement_ = h_ * state_.kinematic_state.state;
+        innovation_ = measurement.value - predicted_measurement_;
 
         // Make corrections
-        const auto cy = MakeKinematicCorrection(measurement, predicted_measurement);
-        MakeExtentCorrection(measurement, predicted_measurement, cy);
+        const auto cy = MakeKinematicCorrection(measurement);
+        MakeExtentCorrection(measurement, cy);
       }
 
-      Eigen::Matrix<double, 2u, 2u> MakeKinematicCorrection(const Measurement & measurement, const Eigen::Vector<double, 2u> & predicted_measurement) {
+      Eigen::Matrix<double, 2u, 2u> MakeKinematicCorrection(const Measurement & measurement) {
         // Calculate moments for the kinematic state update
-        const auto cry = state_.kinematic_state.covariance * h_.transpose();
-        const auto cy = h_ * state_.kinematic_state.covariance * h_.transpose() + c_i_ + c_ii_ + measurement.covariance;
+        const Eigen::Matrix<double, state_size, 2u> cry = state_.kinematic_state.covariance * h_.transpose();
+        const Eigen::Matrix<double, 2u, 2u> cy = h_ * state_.kinematic_state.covariance * h_.transpose() + c_i_ + c_ii_ + measurement.covariance;
         // Udpate kinematic estimate
-        state_.kinematic_state.state += cry * cy.inverse() * (measurement.value - predicted_measurement);
+        state_.kinematic_state.state += cry * cy.inverse() * innovation_;
         state_.kinematic_state.covariance -= cry * cy.inverse() * cry.transpose();
         // Force covariance symetry
         state_.kinematic_state.covariance = MakeMatrixSymetric<state_size>(state_.kinematic_state.covariance);
@@ -100,14 +104,13 @@ namespace eot {
         return cy;
       }
 
-      void MakeExtentCorrection(const Measurement & measurement, const Eigen::Vector<double, 2u> & predicted_measurement, const Eigen::Matrix<double, 2u, 2u> & cy) {
+      void MakeExtentCorrection(const Measurement & measurement, const Eigen::Matrix<double, 2u, 2u> & cy) {
         // Construct pseudo-measurement for the shape update
-        const Eigen::Vector2d innovation = measurement.value - predicted_measurement;
         Eigen::Vector4d innovation_prod;
-        innovation_prod(0u) = std::pow(innovation(0u), 2);
-        innovation_prod(1u) = innovation(0u) * innovation(1u);
-        innovation_prod(2u) = innovation(0u) * innovation(1u);
-        innovation_prod(3u) = std::pow(innovation(1u), 2);
+        innovation_prod(0u) = std::pow(innovation_(0u), 2);
+        innovation_prod(1u) = innovation_(0u) * innovation_(1u);
+        innovation_prod(2u) = innovation_(0u) * innovation_(1u);
+        innovation_prod(3u) = std::pow(innovation_(1u), 2);
         const Eigen::Vector3d yi = f_ * innovation_prod; 
         // Calculate moments for the shape update
         const Eigen::Vector3d yi_bar = f_ * cy.reshaped(4u, 1u);
@@ -170,6 +173,8 @@ namespace eot {
 
       MemEkfCalibrations<state_size> calibrations_;
 
+      bool is_initialized_ = false;
+
       double prev_timestamp_ = 0.0;
 
       Eigen::Matrix<double, 3u, 4u> f_ = Eigen::Matrix<double, 3u, 4u>::Zero();
@@ -185,6 +190,9 @@ namespace eot {
       Eigen::Matrix<double, 4u, 2u> c_mz_ = Eigen::Matrix<double, 4u, 2u>::Zero();
       Eigen::Matrix<double, 2u, 2u> c_z_ = Eigen::Matrix<double, 2u, 2u>::Zero();
       Eigen::Matrix<double, 2u, state_size> h_ = Eigen::Matrix<double, 2u, state_size>::Zero();
+
+      Eigen::Vector<double, measurement_size> predicted_measurement_ = Eigen::Vector<double, measurement_size>::Zero();
+      Eigen::Vector2d innovation_ = Eigen::Vector2d::Zero();
 
       const Eigen::Matrix<double, 2u, 2u> c_h_;
       const Eigen::Matrix3d c_extent_;
