@@ -1,6 +1,8 @@
 #ifndef MEM_EKF_INCLUDE_MEM_EKF_HPP_
 #define MEM_EKF_INCLUDE_MEM_EKF_HPP_
 
+#include <iostream>
+
 #include <cmath>
 #include <vector>
 
@@ -42,6 +44,7 @@ namespace eot {
         h_(1u, 1u) = 1.0;
 
         state_ = calibrations_.initial_state;
+        c_kinematic_ = ConvertDiagonalToMatrix(calibrations_.process_noise_kinematic_diagonal);
       }
       
       virtual ~MemEkf(void) = default;
@@ -54,6 +57,7 @@ namespace eot {
         if (is_initialized_)
           RunUpdateStep(time_delta);
         RunCorrectionStep(measurements);
+        // RunUpdateStep(time_delta);
         
         is_initialized_ = true;
       }
@@ -66,7 +70,7 @@ namespace eot {
       virtual void UpdateKinematic(const double time_delta) = 0;
       
       ObjectState<state_size> state_;
-      const Eigen::Matrix<double, state_size, state_size> c_kinematic_;
+      Eigen::Matrix<double, state_size, state_size> c_kinematic_;
 
     private:
       void RunUpdateStep(const double time_delta) {

@@ -81,6 +81,8 @@ int main() {
   std::mt19937 gen(rd());
   std::uniform_real_distribution<> rand(0.0, 1.0);
 
+  std::normal_distribution<double> normal_distribution(0.0, 1.0);
+
   /************************** Define tracker object **************************/
   eot::MemEkfCalibrations<state_size> calibrations;
   calibrations.multiplicative_noise_diagonal = {0.25, 0.25};
@@ -118,10 +120,10 @@ int main() {
 
       measurement.value(0u) = gt.center.at(index).at(0u)
         + h.at(0) * gt.size.at(index).first * std::cos(gt.orientation.at(index))
-        - h.at(1) * gt.size.at(index).second * std::sin(gt.orientation.at(index)); // + NOISE
+        - h.at(1) * gt.size.at(index).second * std::sin(gt.orientation.at(index));// + 10.0 * normal_distribution(generator);
       measurement.value(1u) = gt.center.at(index).at(1u)
         + h.at(0) * gt.size.at(index).first * std::sin(gt.orientation.at(index))
-        + h.at(1) * gt.size.at(index).second * std::cos(gt.orientation.at(index)); // + NOISE
+        + h.at(1) * gt.size.at(index).second * std::cos(gt.orientation.at(index));// + 10.0 * normal_distribution(generator);
 
       measurement.covariance = Eigen::Matrix<double, measurement_size, measurement_size>::Zero();
       measurement.covariance(0u, 0u) = 200.0;
@@ -168,7 +170,6 @@ int main() {
       y_detections.push_back(detection.value(1u));
     }
   }
-
   plt::scatter(x_detections, y_detections);
 
   // Objects Center
@@ -181,7 +182,6 @@ int main() {
     const auto [x_ellips, y_ellipse] = CreateEllipse(output_objects.at(index).extent_state.ellipse, std::make_pair(output_objects.at(index).kinematic_state.state(0u), output_objects.at(index).kinematic_state.state(1u)));
     plt::plot(x_ellips, y_ellipse, "r");
   }
-
   plt::plot(x_objects, y_objects, "r*");
 
   // Reference
@@ -195,9 +195,7 @@ int main() {
     const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(gt.center.at(index).at(0u), gt.center.at(index).at(1u)));
     plt::plot(x_ellips, y_ellipse, "k");
   }
-
   plt::plot(x_ref, y_ref, "k*");
-
   plt::show();
 
   // Velocity
@@ -215,12 +213,10 @@ int main() {
 
     idx.push_back(index);
   }
-
   plt::plot(idx, vx_ref, "b");
   plt::plot(idx, vy_ref, "b:");
   plt::plot(idx, vx_obj, "r");
   plt::plot(idx, vy_obj, "r:");
-
   plt::show();
 
   return EXIT_SUCCESS;
