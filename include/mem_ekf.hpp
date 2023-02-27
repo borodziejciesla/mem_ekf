@@ -54,10 +54,13 @@ namespace eot {
         const auto time_delta = timestamp - prev_timestamp_;
         prev_timestamp_ = timestamp;
         // Run algorithm
+        // Time update
         if (is_initialized_)
           RunUpdateStep(time_delta);
+        else
+          FirstEstimation(measurements);
+        // Measurement update
         RunCorrectionStep(measurements);
-        // RunUpdateStep(time_delta);
         
         is_initialized_ = true;
       }
@@ -121,6 +124,7 @@ namespace eot {
         const Eigen::Matrix3d cp_y = state_.extent_state.covariance * m_.transpose();
         const Eigen::Matrix3d c_y = f_ * KroneckerProduct<2u, 2u, 2u, 2u>(cy, cy) * (f_ + f_tilde_).transpose();
         // Update shape
+        const Eigen::Vector3d tmp = cp_y * c_y.inverse() * (yi - yi_bar);
         const Eigen::Vector3d updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
         state_.extent_state.ellipse = ConvertVectorToEllipse(updated_ellipse_vector);
         state_.extent_state.covariance -= static_cast<Eigen::Matrix3d>(cp_y * c_y.inverse()) * cp_y.transpose();
@@ -173,6 +177,66 @@ namespace eot {
       void UpdateExtent(void) {
         // elleipse = ellipse
         state_.extent_state.covariance += c_extent_;
+      }
+
+      void FirstEstimation(const std::vector<Measurement> & measurements) {
+        // Find center
+        const auto [x_min, x_max] = std::minmax_element(measurements.begin(), measurements.end(),
+            [](const Measurement & a, const Measurement & b) {
+                return a.value(0u) < b.value(0u);
+        });
+        const auto [y_min, y_max] = std::minmax_element(measurements.begin(), measurements.end(),
+            [](const Measurement & a, const Measurement & b) {
+                return a.value(1u) < b.value(1u);
+        });
+
+        state_.kinematic_state.state(0u) = 0.5 * ((*x_min).value(0u) + (*x_max).value(0u));
+        state_.kinematic_state.state(1u) = 0.5 * ((*y_min).value(1u) + (*y_max).value(1u));
+
+        // Estimatet orientation
+        auto u_11 = 0.0;
+        auto u_20 = 0.0;
+        auto u_02 = 0.0;
+
+        for (const auto & measurement : measurements) {
+          const auto delta_x = measurement.value(0u) - state_.kinematic_state.state(0u);
+          const auto delta_y = measurement.value(0u) - state_.kinematic_state.state(1u);
+
+          u_11 += delta_x * delta_y;
+          u_20 += std::pow(delta_x, 2);
+          u_02 += std::pow(delta_y, 2);
+        }
+        
+        state_.extent_state.ellipse.alpha = 0.5 * std::atan2(2.0 * u_11, u_20 - u_02);
+
+        // Estimate size
+        using Point = std::pair<double, double>;
+        std::vector<Point> points_rotated(measurements.size());
+        std::transform(measurements.begin(), measurements.end(), points_rotated.begin(),
+          [this](const Measurement & measurement) {
+            const auto delta_x = measurement.value(0u) - state_.kinematic_state.state(0u);
+            const auto delta_y = measurement.value(0u) - state_.kinematic_state.state(1u);
+            const auto c = std::cos(-state_.extent_state.ellipse.alpha);
+            const auto s = std::sin(-state_.extent_state.ellipse.alpha);
+
+            const auto x_rotated = delta_x * c - delta_y * s;
+            const auto y_rotated = delta_x * s + delta_y * c;
+
+            return std::make_pair(x_rotated, y_rotated);
+          }
+        );
+        
+        const auto [min_x, max_x] = std::minmax_element(points_rotated.begin(), points_rotated.end(),
+            [](const Point & a, const Point & b) {
+                return a.first < b.first;
+        });
+        const auto [min_y, max_y] = std::minmax_element(points_rotated.begin(), points_rotated.end(),
+            [](const Point & a, const Point & b) {
+                return a.second < b.second;
+        });
+
+        state_.extent_state.ellipse.l1 = 0.5 * (max_x->first - min_x->first);
+        state_.extent_state.ellipse.l2 = 0.5 * (max_y->second - min_y->second);
       }
 
       MemEkfCalibrations<state_size> calibrations_;
