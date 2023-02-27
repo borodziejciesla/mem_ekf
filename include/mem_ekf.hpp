@@ -124,7 +124,6 @@ namespace eot {
         const Eigen::Matrix3d cp_y = state_.extent_state.covariance * m_.transpose();
         const Eigen::Matrix3d c_y = f_ * KroneckerProduct<2u, 2u, 2u, 2u>(cy, cy) * (f_ + f_tilde_).transpose();
         // Update shape
-        const Eigen::Vector3d tmp = cp_y * c_y.inverse() * (yi - yi_bar);
         const Eigen::Vector3d updated_ellipse_vector = ConvertEllipseToVector(state_.extent_state.ellipse) + cp_y * c_y.inverse() * (yi - yi_bar);
         state_.extent_state.ellipse = ConvertVectorToEllipse(updated_ellipse_vector);
         state_.extent_state.covariance -= static_cast<Eigen::Matrix3d>(cp_y * c_y.inverse()) * cp_y.transpose();
@@ -182,13 +181,15 @@ namespace eot {
       void FirstEstimation(const std::vector<Measurement> & measurements) {
         // Find center
         const auto [x_min, x_max] = std::minmax_element(measurements.begin(), measurements.end(),
-            [](const Measurement & a, const Measurement & b) {
-                return a.value(0u) < b.value(0u);
-        });
+          [](const Measurement & a, const Measurement & b) {
+            return a.value(0u) < b.value(0u);
+          }
+        );
         const auto [y_min, y_max] = std::minmax_element(measurements.begin(), measurements.end(),
-            [](const Measurement & a, const Measurement & b) {
-                return a.value(1u) < b.value(1u);
-        });
+          [](const Measurement & a, const Measurement & b) {
+            return a.value(1u) < b.value(1u);
+          }
+        );
 
         state_.kinematic_state.state(0u) = 0.5 * ((*x_min).value(0u) + (*x_max).value(0u));
         state_.kinematic_state.state(1u) = 0.5 * ((*y_min).value(1u) + (*y_max).value(1u));
@@ -227,13 +228,15 @@ namespace eot {
         );
         
         const auto [min_x, max_x] = std::minmax_element(points_rotated.begin(), points_rotated.end(),
-            [](const Point & a, const Point & b) {
-                return a.first < b.first;
-        });
+          [](const Point & a, const Point & b) {
+            return a.first < b.first;
+          }
+        );
         const auto [min_y, max_y] = std::minmax_element(points_rotated.begin(), points_rotated.end(),
-            [](const Point & a, const Point & b) {
-                return a.second < b.second;
-        });
+          [](const Point & a, const Point & b) {
+            return a.second < b.second;
+          }
+        );
 
         state_.extent_state.ellipse.l1 = 0.5 * (max_x->first - min_x->first);
         state_.extent_state.ellipse.l2 = 0.5 * (max_y->second - min_y->second);

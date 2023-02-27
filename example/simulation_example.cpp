@@ -89,7 +89,7 @@ int main() {
   eot::MemEkfCalibrations<state_size> calibrations;
   calibrations.multiplicative_noise_diagonal = {0.25, 0.25};
   calibrations.process_noise_kinematic_diagonal = {100.0, 100.0, 1.0, 1.0};
-  calibrations.process_noise_extent_diagonal = {0.05, 0.0001, 0.0001};
+  calibrations.process_noise_extent_diagonal = {0.025, 0.00000001, 0.00000001};
   calibrations.initial_state.kinematic_state.state << 0.0, 0.0, 0.0, 0.0;
   std::array<double, 4u> kin_cov = {10.0, 10.0, 10.0, 10.0};
   calibrations.initial_state.kinematic_state.covariance = eot::ConvertDiagonalToMatrix(kin_cov);
@@ -106,7 +106,7 @@ int main() {
   std::vector<std::vector<eot::MeasurementWithCovariance<measurement_size>>> detections;
   
   // Sort scans
-  std::string radar_data_path("/home/maciek/Downloads/eot_simulation-20230225T230302Z-001/eot_simulation/radar");
+  std::string radar_data_path("/home/maciek/Downloads/eot_simulation-20230227T213418Z-001/eot_simulation/lidar");
 
   std::set<std::filesystem::path> sorted_by_name;
 
@@ -128,10 +128,10 @@ int main() {
       eot::MeasurementWithCovariance<measurement_size> measurement;
 
       measurement.value(0u) = std::stod(data.at(detection_index).at(0u));
-      measurement.value(1u) = std::stod(data.at(detection_index).at(2u));
+      measurement.value(1u) = std::stod(data.at(detection_index).at(1u));
 
-      measurement.covariance(0u, 0u) = 100.0 * std::stod(data.at(detection_index).at(1u));
-      measurement.covariance(1u, 1u) = 100.0 * std::stod(data.at(detection_index).at(3u));
+      measurement.covariance(0u, 0u) = 0.1;//std::stod(data.at(detection_index).at(1u));
+      measurement.covariance(1u, 1u) = 0.1;//std::stod(data.at(detection_index).at(3u));
 
       measurements.push_back(measurement);
     }
@@ -156,7 +156,7 @@ int main() {
   plt::xlabel("X [m]");
   plt::ylabel("Y [m]");
 
-  std::string reference_data_path("/home/maciek/Downloads/eot_simulation-20230225T230302Z-001/eot_simulation/reference");
+  std::string reference_data_path("/home/maciek/Downloads/eot_simulation-20230227T213418Z-001/eot_simulation/reference");
 
   std::vector<double> x_traj;
   std::vector<double> y_traj;
@@ -167,9 +167,9 @@ int main() {
     x_traj.push_back(std::stod(data.at(1u).at(0u)));
     y_traj.push_back(std::stod(data.at(1u).at(1u)));
 
-    eot::Ellipse ellipse = {std::stod(data.at(1u).at(2u)), 2.35, 0.9};
-    const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(std::stod(data.at(1u).at(0u)), std::stod(data.at(1u).at(1u))));
-    plt::plot(x_ellips, y_ellipse, "k");
+    // eot::Ellipse ellipse = {std::stod(data.at(1u).at(2u)), 2.35, 0.9};
+    // const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(std::stod(data.at(1u).at(0u)), std::stod(data.at(1u).at(1u))));
+    // plt::plot(x_ellips, y_ellipse, "k");
   }
 
   plt::plot(x_traj, y_traj, "^");
@@ -177,7 +177,7 @@ int main() {
   // Detections
   std::vector<double> x_detections;
   std::vector<double> y_detections;
-  for (auto index = 0u; index < detections.size(); index = index + 1u) {
+  for (auto index = 0u; index < detections.size(); index = index + 3u) {
     for (const auto & detection : detections.at(index)) {
       x_detections.push_back(detection.value(0u));
       y_detections.push_back(detection.value(1u));
@@ -188,7 +188,7 @@ int main() {
   // Objects Center
   std::vector<double> x_objects;
   std::vector<double> y_objects;
-  for (auto index = 0u; index < output_objects.size(); index = index + 1u) {
+  for (auto index = 0u; index < output_objects.size(); index = index + 3u) {
     x_objects.push_back(output_objects.at(index).kinematic_state.state(0u));
     y_objects.push_back(output_objects.at(index).kinematic_state.state(1u));
 
@@ -209,6 +209,9 @@ int main() {
   //   plt::plot(x_ellips, y_ellipse, "k");
   // }
   // plt::plot(x_ref, y_ref, "k*");
+
+  plt::axis("equal");
+  plt::grid(true);
   plt::show();
 
   // Velocity
