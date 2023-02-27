@@ -1,8 +1,12 @@
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
+#include <map>
 #include <numbers>
 #include <random>
+#include <set>
 #include <string>
 
 #include "matplotlibcpp.hpp"
@@ -11,12 +15,21 @@
 #include "mem_ekf.hpp"
 #include "../components/helpers/helper_functions.hpp"
 
+#include "csv_reader.hpp"
 #include "trajectory_generation.hpp"
 
 namespace plt = matplotlibcpp;
 
 constexpr auto state_size = 4u;
 constexpr auto measurement_size = 2u;
+
+//--------------------------------------------------------------------------//
+//--- helper function convert timepoint to usable timestamp
+template <typename TP>
+time_t to_time_t(TP tp) {
+  auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(tp - TP::clock::now() + std::chrono::system_clock::now());
+  return std::chrono::system_clock::to_time_t(sctp);
+}
 
 /*************************** Plot helpers ***************************/
 std::pair<std::vector<double>, std::vector<double>> CreateEllipse(const eot::Ellipse & ellipse, const std::pair<double, double> & center) {
@@ -72,29 +85,18 @@ namespace eot {
 
 /*************************** Main ***************************/
 int main() {
-  const auto gt = GetGroundTruth();
-
-  std::default_random_engine generator;
-  std::poisson_distribution<int> distribution(35.0);
-
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_real_distribution<> rand(0.0, 1.0);
-
-  std::normal_distribution<double> normal_distribution(0.0, 1.0);
-
   /************************** Define tracker object **************************/
   eot::MemEkfCalibrations<state_size> calibrations;
   calibrations.multiplicative_noise_diagonal = {0.25, 0.25};
   calibrations.process_noise_kinematic_diagonal = {100.0, 100.0, 1.0, 1.0};
-  calibrations.process_noise_extent_diagonal = {0.05, 0.001, 0.001};
-  calibrations.initial_state.kinematic_state.state << 100.0, 100.0, 10.0, -17.0;
-  std::array<double, 4u> kin_cov = {900.0, 900.0, 16.0, 16.0};
+  calibrations.process_noise_extent_diagonal = {0.05, 0.0001, 0.0001};
+  calibrations.initial_state.kinematic_state.state << 0.0, 0.0, 0.0, 0.0;
+  std::array<double, 4u> kin_cov = {10.0, 10.0, 10.0, 10.0};
   calibrations.initial_state.kinematic_state.covariance = eot::ConvertDiagonalToMatrix(kin_cov);
-  calibrations.initial_state.extent_state.ellipse.alpha = -std::numbers::pi_v<double> / 3.0;
-  calibrations.initial_state.extent_state.ellipse.l1 = 200.0;
-  calibrations.initial_state.extent_state.ellipse.l2 = 90.0;
-  std::array<double, 3u> ext_cov = {0.2, 400.0, 400.0};
+  calibrations.initial_state.extent_state.ellipse.alpha = 0.0;
+  calibrations.initial_state.extent_state.ellipse.l1 = 2.0;
+  calibrations.initial_state.extent_state.ellipse.l2 = 1.0;
+  std::array<double, 3u> ext_cov = {std::numbers::pi_v<double>, 1.0, 1.0};
   calibrations.initial_state.extent_state.covariance = eot::ConvertDiagonalToMatrix(ext_cov);
 
   eot::ModelCv mem_ekf_cv_tracker(calibrations);
@@ -102,69 +104,80 @@ int main() {
   /************************** Run **************************/
   std::vector<eot::ObjectState<state_size>> output_objects;
   std::vector<std::vector<eot::MeasurementWithCovariance<measurement_size>>> detections;
+  
+  // Sort scans
+  std::string radar_data_path("/home/maciek/Downloads/eot_simulation-20230225T230302Z-001/eot_simulation/radar");
 
-  for (auto index = 0u; index < gt.time_steps; index++) {
-    // Select detctions number in step
-    auto detections_number = distribution(generator);
-    while (detections_number == 0)
-      detections_number = distribution(generator);
+  std::set<std::filesystem::path> sorted_by_name;
 
-    std::cout << "Time step: " << std::to_string(index) << ", " << std::to_string(detections_number) << " Measurements\n";
+  for (auto & entry : std::filesystem::directory_iterator(radar_data_path))
+    sorted_by_name.insert(entry.path());
 
-    // Generate noisy measurement
-    std::vector<eot::MeasurementWithCovariance<measurement_size>> measurements(detections_number);
-    for (auto & measurement : measurements) {
-      std::array<double, 2u> h = {-1.0 + 2 * rand(gen), -1.0 + 2 * rand(gen)};
-      while (std::hypot(h.at(0), h.at(1)) > 1.0)
-        h = {-1.0 + 2 * rand(gen), -1.0 + 2 * rand(gen)};
+  // Run 
+  double timestamp = 0.0;
+  for (auto & scene_path : sorted_by_name) {
+    //const auto scene_path = entry.path().c_str();
+    std::cout << scene_path.c_str() << "\n";
 
-      measurement.value(0u) = gt.center.at(index).at(0u)
-        + h.at(0) * gt.size.at(index).first * std::cos(gt.orientation.at(index))
-        - h.at(1) * gt.size.at(index).second * std::sin(gt.orientation.at(index));// + 10.0 * normal_distribution(generator);
-      measurement.value(1u) = gt.center.at(index).at(1u)
-        + h.at(0) * gt.size.at(index).first * std::sin(gt.orientation.at(index))
-        + h.at(1) * gt.size.at(index).second * std::cos(gt.orientation.at(index));// + 10.0 * normal_distribution(generator);
+    CsvReader reader(scene_path.c_str());
+    const auto data = reader.GetData();
 
-      measurement.covariance = Eigen::Matrix<double, measurement_size, measurement_size>::Zero();
-      measurement.covariance(0u, 0u) = 200.0;
-      measurement.covariance(1u, 1u) = 8.0;
+    std::vector<eot::MeasurementWithCovariance<measurement_size>> measurements;
+
+    for (auto detection_index = 1u; detection_index < data.size(); detection_index++) {
+      eot::MeasurementWithCovariance<measurement_size> measurement;
+
+      measurement.value(0u) = std::stod(data.at(detection_index).at(0u));
+      measurement.value(1u) = std::stod(data.at(detection_index).at(2u));
+
+      measurement.covariance(0u, 0u) = 100.0 * std::stod(data.at(detection_index).at(1u));
+      measurement.covariance(1u, 1u) = 100.0 * std::stod(data.at(detection_index).at(3u));
+
+      measurements.push_back(measurement);
     }
-
     detections.push_back(measurements);
 
-    // Run algo
-    mem_ekf_cv_tracker.Run(static_cast<double>(index) * 10.0, measurements);
-    output_objects.push_back(mem_ekf_cv_tracker.GetEstimatedState());
+    std::cout << "Time step: " << std::to_string(timestamp) << ", " << std::to_string(measurements.size()) << " Measurements\n";
 
+    // Run tracker
+    mem_ekf_cv_tracker.Run(timestamp, measurements);
 
+    // Get output
     const auto object = mem_ekf_cv_tracker.GetEstimatedState();
+    output_objects.push_back(object);
+
     std::cout << "alpha = " << object.extent_state.ellipse.alpha << ", l1 = " << object.extent_state.ellipse.l1 << ", l2 = " << object.extent_state.ellipse.l2 << "\n";
-    std::cout << "Center Error [m]: " << std::hypot(object.kinematic_state.state(0) - gt.center.at(index).at(0), object.kinematic_state.state(1) - gt.center.at(index).at(1)) << "\n";
+
+    timestamp += 0.1;
   }
 
   /************************** Plot outputs **************************/
   plt::figure_size(1200, 780);
-
   plt::xlabel("X [m]");
   plt::ylabel("Y [m]");
 
-  // Trajectory
+  std::string reference_data_path("/home/maciek/Downloads/eot_simulation-20230225T230302Z-001/eot_simulation/reference");
+
   std::vector<double> x_traj;
   std::vector<double> y_traj;
-  for (const auto & point : gt.center) {
-    x_traj.push_back(point.at(0u));
-    y_traj.push_back(point.at(1u));
+  for (auto & scene_path : std::filesystem::directory_iterator(reference_data_path)) {
+    CsvReader reader(scene_path.path().c_str());
+    const auto data = reader.GetData();
+
+    x_traj.push_back(std::stod(data.at(1u).at(0u)));
+    y_traj.push_back(std::stod(data.at(1u).at(1u)));
+
+    eot::Ellipse ellipse = {std::stod(data.at(1u).at(2u)), 2.35, 0.9};
+    const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(std::stod(data.at(1u).at(0u)), std::stod(data.at(1u).at(1u))));
+    plt::plot(x_ellips, y_ellipse, "k");
   }
 
-  std::map<std::string, std::string> keywords_traj;
-  keywords_traj.insert(std::pair<std::string, std::string>("label", "Trajectory") );
-
-  plt::plot(x_traj, y_traj, keywords_traj);
+  plt::plot(x_traj, y_traj, "^");
 
   // Detections
   std::vector<double> x_detections;
   std::vector<double> y_detections;
-  for (auto index = 0u; index < detections.size(); index = index + 3u) {
+  for (auto index = 0u; index < detections.size(); index = index + 1u) {
     for (const auto & detection : detections.at(index)) {
       x_detections.push_back(detection.value(0u));
       y_detections.push_back(detection.value(1u));
@@ -175,7 +188,7 @@ int main() {
   // Objects Center
   std::vector<double> x_objects;
   std::vector<double> y_objects;
-  for (auto index = 0u; index < output_objects.size(); index = index + 3u) {
+  for (auto index = 0u; index < output_objects.size(); index = index + 1u) {
     x_objects.push_back(output_objects.at(index).kinematic_state.state(0u));
     y_objects.push_back(output_objects.at(index).kinematic_state.state(1u));
 
@@ -185,38 +198,41 @@ int main() {
   plt::plot(x_objects, y_objects, "r*");
 
   // Reference
-  std::vector<double> x_ref;
-  std::vector<double> y_ref;
-  for (auto index = 0u; index < gt.time_steps; index = index + 3u) {
-    x_ref.push_back(gt.center.at(index).at(0u));
-    y_ref.push_back(gt.center.at(index).at(1u));
+  // std::vector<double> x_ref;
+  // std::vector<double> y_ref;
+  // for (auto index = 0u; index < gt.time_steps; index = index + 3u) {
+  //   x_ref.push_back(gt.center.at(index).at(0u));
+  //   y_ref.push_back(gt.center.at(index).at(1u));
 
-    eot::Ellipse ellipse = {gt.orientation.at(index), gt.size.at(index).first, gt.size.at(index).second};
-    const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(gt.center.at(index).at(0u), gt.center.at(index).at(1u)));
-    plt::plot(x_ellips, y_ellipse, "k");
-  }
-  plt::plot(x_ref, y_ref, "k*");
+  //   eot::Ellipse ellipse = {gt.orientation.at(index), gt.size.at(index).first, gt.size.at(index).second};
+  //   const auto [x_ellips, y_ellipse] = CreateEllipse(ellipse, std::make_pair(gt.center.at(index).at(0u), gt.center.at(index).at(1u)));
+  //   plt::plot(x_ellips, y_ellipse, "k");
+  // }
+  // plt::plot(x_ref, y_ref, "k*");
   plt::show();
 
   // Velocity
-  std::vector<double> vx_ref;
-  std::vector<double> vy_ref;
+  // std::vector<double> vx_ref;
+  // std::vector<double> vy_ref;
   std::vector<double> vx_obj;
   std::vector<double> vy_obj;
+  std::vector<double> speed;
   std::vector<double> idx;
-  for (auto index = 0u; index < gt.time_steps; index = index + 1u) {
-    vx_ref.push_back(gt.velocity.at(index).first);
-    vy_ref.push_back(gt.velocity.at(index).second);
+  for (auto index = 0u; index < output_objects.size(); index = index + 1u) {
+    // vx_ref.push_back(gt.velocity.at(index).first);
+    // vy_ref.push_back(gt.velocity.at(index).second);
 
     vx_obj.push_back(output_objects.at(index).kinematic_state.state(2u));
     vy_obj.push_back(output_objects.at(index).kinematic_state.state(3u));
+    speed.push_back(std::hypot(output_objects.at(index).kinematic_state.state(2u), output_objects.at(index).kinematic_state.state(3u)));
 
     idx.push_back(index);
   }
-  plt::plot(idx, vx_ref, "b");
-  plt::plot(idx, vy_ref, "b:");
+  // plt::plot(idx, vx_ref, "b");
+  // plt::plot(idx, vy_ref, "b:");
   plt::plot(idx, vx_obj, "r");
   plt::plot(idx, vy_obj, "r:");
+  plt::plot(idx, speed, "r--");
   plt::show();
 
   return EXIT_SUCCESS;

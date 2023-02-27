@@ -9,9 +9,10 @@ else()
 endif()
 
 add_executable(${EXAMPLE_PROJECT_NAME}
-  main_example.cpp
+  simulation_example.cpp
   trajectory_generation.cpp
   matplotlibcpp.hpp
+  csv_reader.cpp
 )
 
 include_directories(${EXAMPLE_PROJECT_NAME}
